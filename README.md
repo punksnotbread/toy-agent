@@ -1,4 +1,4 @@
-# chat.py
+# toy agent loop
 
 Small toy program for setting up an agentic loop with tools. 
 

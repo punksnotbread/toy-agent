@@ -1,5 +1,6 @@
 import re
-import json 
+import json
+
 
 def extract_json(raw_text: str) -> dict:
     # This method is not required if using the anthropic-sdk (it would cover it)
@@ -28,5 +29,3 @@ def extract_json(raw_text: str) -> dict:
         pass
 
     raise ValueError(f"No valid JSON found in model output:\n{raw_text}")
-
-

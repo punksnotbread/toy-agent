@@ -62,7 +62,7 @@ if __name__ == "__main__":
             elif response["type"] == "tool_call":
                 messages.append({"role": "assistant", "content": json.dumps(response)})
 
-                result = registry.execute(response["name"], **response["arguments"])
+                result = REGISTRY.execute(response["name"], **response["arguments"])
 
                 messages.append(
                     {

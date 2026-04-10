@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Callable
 from pathlib import Path
 
+
 class ToolParam(BaseModel):
     name: str
     type: str
@@ -80,6 +81,31 @@ def edit_file(path: str, content: str, append: bool = False) -> str:
     return f"Updated file: {path}"
 
 
+def code_search(pattern: str, file_type: str = "", directory: str = ".") -> str:
+    try:
+        cmd = ["rg", "--color=never", pattern]
+
+        if file_type:
+            cmd.extend(["--type", file_type])
+
+        cmd.append(directory)
+
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30, cwd=Path.cwd()
+        )
+
+        if result.returncode == 0:
+            return result.stdout
+        elif result.returncode == 1:
+            return f"No matches found for pattern: {pattern}"
+        else:
+            return f"Search error: {result.stderr}"
+    except FileNotFoundError:
+        return "Error: ripgrep (rg) not installed. Please install it first."
+    except Exception as e:
+        return f"Search error: {e}"
+
+
 REGISTRY = ToolRegistry()
 
 REGISTRY.register(
@@ -151,3 +177,30 @@ REGISTRY.register(
     )
 )
 
+REGISTRY.register(
+    Tool(
+        name="code_search",
+        description="Search for code patterns using ripgrep (rg). Use this to find code patterns, function definitions, variable usage, or any text in the codebase. You can search by pattern, file type, or directory.",
+        params=[
+            ToolParam(
+                name="pattern",
+                type="string",
+                description="The search pattern (regex supported)",
+                required=True,
+            ),
+            ToolParam(
+                name="file_type",
+                type="string",
+                description="File type filter (e.g., 'py', 'js', 'go') - optional",
+                required=False,
+            ),
+            ToolParam(
+                name="directory",
+                type="string",
+                description="Directory to search in (default: current directory)",
+                required=False,
+            ),
+        ],
+        func=code_search,
+    )
+)
