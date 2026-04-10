@@ -12,6 +12,16 @@ uv sync
 uv run chat.py
 ```
 
+## how it works
+1. User types a question
+2. chat.py sends it to Claude with tool definitions in the system prompt
+3. Claude responds with JSON:
+   - If type='message': display answer to user
+   - If type='tool_call': execute the tool via REGISTRY
+4. Add tool result back to message history
+5. Claude sees result and either calls another tool or sends final message
+6. Repeat until Claude outputs a message response or user exits
+
 ## example
 ```sh
 $ uv run chat.py
