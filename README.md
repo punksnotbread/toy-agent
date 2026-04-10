@@ -1,6 +1,6 @@
 # toy agent loop
 
-Small toy program for setting up an agentic loop that can use tools. 
+Small toy program for setting up an agentic loop that can use predefined tools. 
 
 Supported tools - list, read, edit files, run bash commands.
 
