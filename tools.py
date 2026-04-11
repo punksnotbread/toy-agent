@@ -65,20 +65,36 @@ def run_bash(command: str) -> str:
     result = subprocess.run(
         command, shell=True, capture_output=True, text=True, timeout=30, cwd=Path.cwd()
     )
-    return result.stdout
+
+    output = ""
+    if result.stdout:
+        output += result.stdout
+    if result.stderr:
+        output += f"\n[STDERR]\n{result.stderr}"
+    if result.returncode != 0:
+        output += f"\n[EXIT CODE: {result.returncode}]"
+
+    return output if output else "[No output]"
 
 
-def edit_file(path: str, content: str, append: bool = False) -> str:
+def edit_file(
+    path: str, content: str, append: bool = False, create: bool = False
+) -> str:
     file_path = Path(path)
 
+    # Check if file exists
     if not file_path.exists():
-        return f"File not found: {path}"
+        if not create:
+            return f"File not found: {path}. Use create=True to create a new file."
+        # Create parent directories if needed
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if append:
+    if append and file_path.exists():
         content = file_path.read_text() + "\n" + content
 
     file_path.write_text(content)
-    return f"Updated file: {path}"
+    action = "Created" if not file_path.exists() or create else "Updated"
+    return f"{action} file: {path}"
 
 
 def code_search(pattern: str, file_type: str = "", directory: str = ".") -> str:
@@ -152,12 +168,12 @@ REGISTRY.register(
 REGISTRY.register(
     Tool(
         name="edit_file",
-        description="Edit a file by (re)writing or appending content",
+        description="Edit a file by (re)writing or appending content. Can also create new files.",
         params=[
             ToolParam(
                 name="path",
                 type="string",
-                description="File path to edit",
+                description="File path to edit or create",
                 required=True,
             ),
             ToolParam(
@@ -169,8 +185,14 @@ REGISTRY.register(
             ToolParam(
                 name="append",
                 type="boolean",
-                description="Should we append to the file.",
+                description="Should we append to the file (false to overwrite)",
                 required=True,
+            ),
+            ToolParam(
+                name="create",
+                type="boolean",
+                description="If true, create the file if it doesn't exist",
+                required=False,
             ),
         ],
         func=edit_file,
@@ -204,3 +226,34 @@ REGISTRY.register(
         func=code_search,
     )
 )
+
+
+def build_anthropic_tools() -> list[dict]:
+    """Convert tool registry to Anthropic API tool format."""
+    tools = []
+
+    for tool in REGISTRY._tools.values():
+        # Build properties dict for each parameter
+        properties = {}
+        required = []
+
+        for param in tool.params:
+            properties[param.name] = {
+                "type": param.type,
+                "description": param.description,
+            }
+            if param.required:
+                required.append(param.name)
+
+        anthropic_tool = {
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            },
+        }
+        tools.append(anthropic_tool)
+
+    return tools

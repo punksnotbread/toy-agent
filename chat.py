@@ -1,35 +1,32 @@
-import llm
-import json
+import anthropic
+import os
 
+from tools import REGISTRY, build_anthropic_tools
 
-from utils import extract_json
-from tools import REGISTRY
-
-SYSTEM_PROMPT = f"""
+SYSTEM_PROMPT = """
 You are an AI assistant with access to tools.
 
-TOOLS:
-{json.dumps(REGISTRY.get_all(), indent=2)}
-
-STRICT OUTPUT RULES:
-- Output EXACTLY ONE JSON object per response. Nothing else.
-- No markdown. No backticks. No explanations. No XML.
-- Do not narrate what you are about to do.
-- Do not call multiple tools at once — one tool call per response.
-- If you need to read a file before answering, call the tool. Do not also output a message.
-- After a tool returns a result, either call another tool OR output a message — never repeat the same tool call.
-- If a tool call succeeded (e.g. "Successfully edited"), respond with a message confirming the result to the user.
-- Be concise, short in answers, unless asked otherwise.
-
-Response format:
-If responding to user: {{"type": "message", "content": "text"}}
-If calling a tool:     {{"type": "tool_call", "name": "tool_name", "arguments": {{...}}}}
+INSTRUCTION:
+- You must always respond with one of two actions:
+  1. Call a tool to help answer the user's question
+  2. Send a text response to the user (when you have a complete answer)
+- Call tools one at a time, never multiple tools in one response
+- If a tool result is returned, evaluate if you need to:
+  - Call another tool to gather more information
+  - Respond with a message to the user with the gathered information
+- Be concise and direct in your responses
 """
 
 if __name__ == "__main__":
-    model = llm.get_model("claude-haiku-4.5")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    client = anthropic.Anthropic(api_key=api_key)
+
+    messages = []
+    tools = build_anthropic_tools()
+
     while True:
         prompt = input("> ")
         if prompt == "exit":
@@ -38,38 +35,74 @@ if __name__ == "__main__":
         messages.append({"role": "user", "content": prompt})
 
         while True:
-            # print(f"input: {messages}")
+            response = client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                tools=tools,
+                messages=messages,
+            )
 
-            # If we fail to get a JSON, let's retry (small models skip system prompts)
-            response = None
-            for _ in range(3):
-                output = model.prompt(json.dumps(messages)).text()
-                # print('raw < ', output)
-                try:
-                    response = extract_json(output)
-                    break
-                except:
-                    continue
+            content_blocks = []
+            for block in response.content:
+                if block.type == "text":
+                    content_blocks.append(
+                        {
+                            "type": "text",
+                            "text": block.text,
+                        }
+                    )
+                elif block.type == "tool_use":
+                    content_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input,
+                        }
+                    )
 
-            if response is None:
-                raise ValueError("Model failed to produce valid JSON")
+            messages.append({"role": "assistant", "content": content_blocks})
 
-            if response["type"] == "message":
-                messages.append({"role": "assistant", "content": response["content"]})
-                print("<", response["content"])
-                break
+            tool_results = []
+            has_text_response = False
 
-            elif response["type"] == "tool_call":
-                messages.append({"role": "assistant", "content": json.dumps(response)})
+            for block in response.content:
+                if block.type == "text":
+                    print("<", block.text)
+                    has_text_response = True
 
-                result = REGISTRY.execute(response["name"], **response["arguments"])
+                elif block.type == "tool_use":
+                    tool_name = block.name
+                    tool_input = block.input
 
+                    try:
+                        result = REGISTRY.execute(tool_name, **tool_input)
+                    except Exception as e:
+                        result = f"Error executing tool: {str(e)}"
+
+                    # Print tool output to user if it's from bash
+                    if tool_name == "run_bash":
+                        print("$ OUTPUT:")
+                        print(result)
+                        print()
+
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": str(result),
+                        }
+                    )
+
+            if tool_results:
                 messages.append(
                     {
-                        "role": "tool",
-                        "name": response["name"],
-                        "content": json.dumps(
-                            {"result": result},
-                        ),
+                        "role": "user",
+                        "content": tool_results,
                     }
                 )
+                continue
+
+            if has_text_response:
+                break

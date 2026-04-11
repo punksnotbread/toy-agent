@@ -9,7 +9,7 @@ Inspired by https://ghuntley.com/agent/
 ## setup
 ```sh
 uv sync
-uv run chat.py
+export ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} && uv run chat.py
 ```
 
 ## how it works
